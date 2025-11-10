@@ -1,1 +1,8 @@
-!dist
+node_modules/
+.vscode/
+.gitignore
+tsconfig.json
+.prettierrc
+.prettierignore
+.prettierignore
+.cursor/
