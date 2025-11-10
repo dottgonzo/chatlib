@@ -41,3 +41,18 @@ export type TChatKitConfig = {
   | "NONE";
 };
 
+export interface IConversationMessagePreset {
+  type: string;
+  message: string;
+}
+
+export type TNewMessage = {
+  tokens: string
+  model?: string
+}
+
+export type TNewConversationWithMessageParams = {
+  agents: any[];
+  members?: any[];
+  message: TNewMessage
+}
