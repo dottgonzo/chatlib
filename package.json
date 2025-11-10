@@ -1,0 +1,37 @@
+{
+  "name": "simple-chatkit",
+  "version": "0.0.0",
+  "description": "simple-chatkit",
+  "keywords": [
+    "simple-chatkit",
+    "nodejs"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:dottgonzo/chatlib.git"
+  },
+  "license": "Apache-2.0",
+  "author": "",
+  "type": "commonjs",
+  "main": "./dist/index.cjs",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc",
+    "watch-ts": "tsc -w",
+    "release:patch": "npm version patch && npm run push",
+    "release:minor": "npm version minor && npm run push",
+    "release:major": "npm version major && npm run push",
+    "push": "git push && git push --tags && npm publish"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "prettier": "^3.6.2",
+    "prettier-plugin-organize-imports": "^4.3.0",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "cloud-object-storage-lib": "^0.1.24",
+    "nodemongooselib": "^0.0.10",
+    "redis": "^5.9.0"
+  }
+}
