@@ -12,6 +12,7 @@ export interface IMessage {
   messageType: string;
   tokens?: string;
   status?: string;
+  test?: boolean;
 }
 
 const messageSchema = new Schema<IMessage>({
@@ -21,6 +22,7 @@ const messageSchema = new Schema<IMessage>({
   messageType: { type: String, required: true },
   tokens: { type: String },
   status: { type: String, required: true, default: "pending" },
+  test: { type: Boolean, required: false, default: false },
 }, {
   timestamps: true,
 });

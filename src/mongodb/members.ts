@@ -7,18 +7,20 @@ export interface IMember {
   createdAt: Date;
   updatedAt: Date;
   role: string;
-  status: boolean;
+  status: string;
   displayName?: string;
   aiContext?: string;
   lang: string;
+  test?: boolean;
 }
 
 const memberSchema = new Schema<IMember>({
   role: { type: String, required: true },
-  status: { type: Boolean, required: true },
+  status: { type: String, required: true },
   displayName: { type: String },
   aiContext: { type: String },
   lang: { type: String, required: true, default: "en" },
+  test: { type: Boolean, required: false, default: false },
 });
 
 // 3. Create a Model.

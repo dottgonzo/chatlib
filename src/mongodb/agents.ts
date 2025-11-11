@@ -1,5 +1,4 @@
 import { Schema, model } from "mongoose";
-import { IConversationMessagePreset } from "../interfaces.cjs";
 
 
 // 1. Create an interface representing a document in MongoDB.
@@ -10,20 +9,15 @@ export interface IAgent {
   name: string;
   languages: string[];
   language: string;
-  presetMessages: IConversationMessagePreset[];
+  test?: boolean;
 }
 
-const _conversationMessagePresetSchema = new Schema<IConversationMessagePreset>({
-  type: { type: String, required: true },
-  message: { type: String, required: true },
-});
 
 const agentSchema = new Schema<IAgent>({
   name: { type: String, required: true },
   languages: { type: [String], required: true, default: ["en"] },
   language: { type: String, required: true, default: "en" },
-  presetMessages: { type: [_conversationMessagePresetSchema], required: true },
-
+  test: { type: Boolean, required: false, default: false },
 }, {
   timestamps: true,
 });

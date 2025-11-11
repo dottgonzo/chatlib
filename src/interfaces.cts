@@ -43,7 +43,7 @@ export type TChatKitConfig = {
 
 export interface IConversationMessagePreset {
   type: string;
-  message: string;
+  tokens: string;
 }
 
 export type TNewMessage = {

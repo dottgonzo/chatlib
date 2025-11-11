@@ -6,6 +6,7 @@ import members from "./members";
 import agents from "./agents";
 import conversations from "./conversations";
 import messages from "./messages";
+import studio from "./studio";
 
 
 
@@ -15,6 +16,7 @@ export type TMONGODB = {
   agents: typeof agents;
   conversations: typeof conversations;
   messages: typeof messages;
+  studio: typeof studio;
 };
 
 export async function initDb(uri: string, options?: ConnectOptions) {
@@ -25,6 +27,7 @@ export async function initDb(uri: string, options?: ConnectOptions) {
     agents,
     conversations,
     messages,
+    studio,
   };
   return db;
 }

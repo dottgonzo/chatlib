@@ -8,6 +8,7 @@ import type { IConversationMessagePreset, TChatKitConfig, TNewConversationWithMe
 import { consumeJSON, sendJSON } from "./redisq";
 import { IMessage } from "./mongodb/messages";
 import { IConversation } from "./mongodb/conversations";
+import { IStudio } from "./mongodb/studio";
 
 export class ChatKit {
     mongo?: TMONGODB;
@@ -67,18 +68,15 @@ export class ChatKit {
         return agent;
     }
 
-    public async createConversationWithMessage(member_id: string, options: TNewConversationWithMessageParams): Promise<IConversation> {
+    public async createConversationWithMessage(studio_id: string, member_id: string, options: TNewConversationWithMessageParams): Promise<IConversation> {
         if (!this.mongo) {
             throw new Error("MongoDB is not initialized");
         }
-        const presetMessages: IConversation["presetMessages"] = []
-        for (const agent_id of options.agents) {
-            const agent = await this.mongo.agents.findById(agent_id);
-            if (agent) {
-                presetMessages.push(...agent.presetMessages);
-            }
+        const studio = await this.mongo.studio.findById(studio_id).read("secondaryPreferred").lean();
+        if (!studio) {
+            throw new Error("Studio not found");
         }
-        const params = { agents: options.agents, members: options.members, title: options.message.tokens, authors: { $in: [member_id] } }
+        const params = { studio: studio_id, members: options.members, title: options.message.tokens, authors: { $in: [member_id] } }
         let previousConversation = await this.mongo.conversations.findOne(params).read("secondaryPreferred").lean();
         if (!previousConversation) {
             previousConversation = await this.mongo.conversations.findOne(params).read("primary").lean();
@@ -88,18 +86,20 @@ export class ChatKit {
         } else {
             return previousConversation;
         }
-        const conversation = await this.mongo.conversations.create({ agents: options.agents, members: options.members, title: options.message.tokens, presetMessages, authors: [member_id] });
+
+
+        const conversation = await this.mongo.conversations.create({ studio: studio_id, studio_version: studio.version, members: options.members, title: options.message.tokens, authors: [member_id] });
         await this.addMessage(conversation._id, member_id, { tokens: options.message.tokens });
         return conversation;
     }
 
-    public async addMessage(conversation_id: string, member_id: string, options: TNewMessage): Promise<IMessage> {
+    public async addMessage(conversation_id: string, member_id: string, options: TNewMessage): Promise<string[]> {
         if (!this.mongo) {
             throw new Error("MongoDB is not initialized");
         }
         let messages = await this.mongo.messages.find({ conversation: conversation_id, authorType: "user", authorId: member_id }).sort({ createdAt: -1 }).limit(1).read("primary").lean();
         if (messages[0]?.tokens && options.tokens) {
-            return messages[0];
+            return [messages[0]._id];
         }
         const newMessage = await this.mongo.messages.create({ conversation: conversation_id, authorType: "user", authorId: member_id, tokens: options.tokens, status: "completed" });
         let message = await this.mongo.messages.findById(newMessage._id).read("secondaryPreferred").lean();
@@ -113,16 +113,22 @@ export class ChatKit {
         if (!conversation) {
             throw new Error("Conversation not found");
         }
-        for (const agent_id of conversation.agents) {
+        const studio = await this.mongo.studio.findById(conversation.studio).populate("agents").read("secondaryPreferred").lean();
+        if (!studio) {
+            throw new Error("Studio not found");
+        }
+        let agentMessages: string[] = [];
+        for (const agent of studio.agents) {
             const agentMessage = {
                 conversation: conversation_id,
                 authorType: "agent",
-                authorId: agent_id,
+                authorId: agent._id,
                 status: "pending",
             }
-            await this.mongo.messages.create(agentMessage);
+            const newAgentMessage = await this.mongo.messages.create(agentMessage);
+            agentMessages.push(newAgentMessage._id.toString());
         }
-        return message;
+        return agentMessages;
     }
     private async completeMessage(message_id: string, lastUpdatedAt: Date, tokens: string): Promise<IMessage> {
         if (!this.mongo) {

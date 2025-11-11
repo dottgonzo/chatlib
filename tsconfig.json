@@ -103,5 +103,12 @@
     "skipLibCheck": true /* Skip type checking all .d.ts files. */,
     "outDir": "./dist", // Un'unica cartella di output
     "rootDir": "./src"
-  }
+  },
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "dist",
+    "node_modules"
+  ]
 }

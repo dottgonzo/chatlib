@@ -7,28 +7,22 @@ export interface IConversation {
   _id: any;
   createdAt: Date;
   updatedAt: Date;
-  agents: any[]
+  studio: any
+  studio_version: number
   members: any[]
   title: string;
-  presetMessages: IConversationMessagePreset[];
+  test?: boolean;
 }
 
 
 
-const _conversationMessagePresetSchema = new Schema<IConversationMessagePreset>({
-  type: { type: String, required: true },
-  message: { type: String, required: true },
-},
-  {
-    _id: false,
-    timestamps: false,
-  });
 
 const conversationSchema = new Schema<IConversation>({
-  agents: { type: [Schema.Types.ObjectId], ref: "Agent", required: true },
+  studio: { type: Schema.Types.ObjectId, ref: "Studio", required: true },
   members: { type: [Schema.Types.ObjectId], ref: "Member", required: true },
   title: { type: String, required: true },
-  presetMessages: { type: [_conversationMessagePresetSchema], required: true },
+  studio_version: { type: Number, required: true },
+  test: { type: Boolean, required: false, default: false },
 }, {
   timestamps: true,
 });
