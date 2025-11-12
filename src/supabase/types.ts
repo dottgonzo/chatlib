@@ -231,6 +231,24 @@ export interface Database {
                 };
                 Relationships: [];
             };
+            studio_members: {
+                Row: {
+                    studio_id: string;
+                    member_id: string;
+                    test: boolean | null | undefined;
+                };
+                Insert: {
+                    studio_id: string;
+                    member_id: string;
+                    test?: boolean | null | undefined;
+                };
+                Update: {
+                    studio_id?: string;
+                    member_id?: string;
+                    test?: boolean | null | undefined;
+                };
+                Relationships: [];
+            };
             conversation_members: {
                 Row: {
                     conversation_id: string;
@@ -284,6 +302,9 @@ export type MessageInsert = TableInsert<"messages">;
 export type StudioAgentRow = TableRow<"studio_agents">;
 export type StudioAgentInsert = TableInsert<"studio_agents">;
 
+export type StudioMemberRow = TableRow<"studio_members">;
+export type StudioMemberInsert = TableInsert<"studio_members">;
+
 export type ConversationMemberRow = TableRow<"conversation_members">;
 export type ConversationMemberInsert = TableInsert<"conversation_members">;
 
@@ -303,8 +324,8 @@ export type IConversation = ConversationRow & {
 export type IMessage = MessageRow;
 
 export type IStudio = StudioRow & {
-    agents: string[];
+    agents: IAgent[];
     presetMessages: IConversationMessagePreset[];
-    studio_members: string[];
+    members: IMember[];
 };
 

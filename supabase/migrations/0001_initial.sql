@@ -73,6 +73,16 @@ create table if not exists public.studio_agents (
 create index if not exists studio_agents_agent_idx
   on public.studio_agents (agent_id);
 
+create table if not exists public.studio_members (
+  studio_id uuid not null references public.studios(id) on delete cascade,
+  member_id uuid not null references public.members(id) on delete cascade,
+  test boolean not null default false,
+  primary key (studio_id, member_id)
+);
+
+create index if not exists studio_members_member_idx
+  on public.studio_members (member_id);
+
 create table if not exists public.conversation_members (
   conversation_id uuid not null references public.conversations(id) on delete cascade,
   member_id uuid not null references public.members(id) on delete cascade,

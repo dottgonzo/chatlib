@@ -7,14 +7,17 @@ import { initSupabase, type ChatSupabaseClient } from "./supabase/client";
 import {
     mapAgentRow,
     mapConversationRow,
+    mapMemberRow,
     mapMessageRow,
     mapStudioRow,
     type ConversationRowWithRelations,
     type StudioRowWithRelations,
 } from "./supabase/mappers";
 import type {
+    IAgent,
     IConversation,
     IConversationMessagePreset,
+    IMember,
     IMessage,
     IStudio,
     AgentRow,
@@ -34,6 +37,11 @@ import type {
 import { consumeJSON, sendJSON } from "./redisq";
 
 const DEFAULT_MESSAGE_TYPE = "text";
+
+type ConversationMessagesResult = IConversation & {
+    messages: IMessage[];
+    studio: IStudio;
+};
 
 export class ChatKit {
     supabase?: ChatSupabaseClient;
@@ -231,7 +239,25 @@ export class ChatKit {
 
         const conversation = await this.fetchConversation(conversation_id);
         const studio = await this.fetchStudio(conversation.studio_id);
-        const agentIds: string[] = studio.agents ?? [];
+        let studioAgents: IAgent[] = studio.agents ?? [];
+
+        if (studioAgents.length === 0) {
+            const studioAgentsResponse = (await supabase
+                .from("studio_agents")
+                .select("agent:agents(*)")
+                .eq("studio_id", conversation.studio_id)) as PostgrestResponse<{ agent: AgentRow | null }>;
+
+            if (studioAgentsResponse.error) {
+                this.handleSupabaseError("Failed to load studio agents", studioAgentsResponse.error);
+            }
+
+            studioAgents = (studioAgentsResponse.data ?? [])
+                .map(entry => entry.agent)
+                .filter((agent): agent is AgentRow => Boolean(agent))
+                .map(agent => mapAgentRow(agent));
+        }
+
+        const agentIds: string[] = studioAgents.map(agent => agent.id as string);
         if (agentIds.length === 0) {
             return [];
         }
@@ -255,6 +281,68 @@ export class ChatKit {
         }
 
         return (agentMessagesResponse.data ?? []).map(row => row.id);
+    }
+
+    public async getConversationMessages(conversation_id: string): Promise<ConversationMessagesResult> {
+        const supabase = this.ensureSupabase();
+
+        const conversation = await this.fetchConversation(conversation_id);
+        const studio = await this.fetchStudio(conversation.studio_id);
+
+        const messagesResponse = (await supabase
+            .from("messages")
+            .select("*")
+            .eq("conversation_id", conversation_id)
+            .order("created_at", { ascending: true })) as PostgrestResponse<MessageRow>;
+
+        if (messagesResponse.error) {
+            this.handleSupabaseError("Failed to load conversation messages", messagesResponse.error);
+        }
+
+        const messages = (messagesResponse.data ?? []).map(row => mapMessageRow(row));
+
+        let members: IMember[] = [];
+        if (conversation.members.length > 0) {
+            const membersResponse = (await supabase
+                .from("members")
+                .select("*")
+                .in("id", conversation.members)) as PostgrestResponse<MemberRow>;
+
+            if (membersResponse.error) {
+                this.handleSupabaseError("Failed to load conversation members", membersResponse.error);
+            }
+
+            members = (membersResponse.data ?? []).map(row => mapMemberRow(row));
+        }
+
+        let agents: IAgent[] = studio.agents ?? [];
+        if (agents.length === 0) {
+            const agentsResponse = (await supabase
+                .from("studio_agents")
+                .select("agent:agents(*)")
+                .eq("studio_id", studio.id)) as PostgrestResponse<{ agent: AgentRow | null }>;
+
+            if (agentsResponse.error) {
+                this.handleSupabaseError("Failed to load studio agents", agentsResponse.error);
+            }
+
+            agents = (agentsResponse.data ?? [])
+                .map(entry => entry.agent)
+                .filter((agent): agent is AgentRow => Boolean(agent))
+                .map(agent => mapAgentRow(agent));
+        }
+
+        const studioMembers = studio.members && studio.members.length > 0 ? studio.members : members;
+
+        return {
+            ...conversation,
+            studio: {
+                ...studio,
+                members: studioMembers,
+                agents,
+            },
+            messages,
+        };
     }
 
     private async completeMessage(message_id: string, lastUpdatedAt: Date, tokens: string): Promise<IMessage> {
@@ -326,7 +414,7 @@ export class ChatKit {
         const supabase = this.ensureSupabase();
         const response = (await supabase
             .from("studios")
-            .select("*, studio_agents(agent_id), studio_preset_messages(type,tokens,sort_order)")
+            .select("*, studio_agents(agent:agents(*)), studio_members(member:members(*)), studio_preset_messages(type,tokens,sort_order)")
             .eq("id", studioId)
             .maybeSingle()) as PostgrestSingleResponse<StudioRowWithRelations | null>;
 

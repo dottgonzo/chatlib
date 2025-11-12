@@ -13,6 +13,7 @@ import type {
     MemberRow,
     MessageRow,
     StudioAgentRow,
+    StudioMemberRow,
     StudioPresetMessageRow,
     StudioRow,
 } from "./types";
@@ -21,8 +22,17 @@ export type ConversationRowWithRelations = ConversationRow & {
     conversation_members?: ConversationMemberRow[] | null;
 };
 
+type StudioAgentRelation = StudioAgentRow & {
+    agent?: AgentRow | null;
+};
+
+type StudioMemberRelation = StudioMemberRow & {
+    member?: MemberRow | null;
+};
+
 export type StudioRowWithRelations = StudioRow & {
-    studio_agents?: StudioAgentRow[] | null;
+    studio_agents?: StudioAgentRelation[] | null;
+    studio_members?: StudioMemberRelation[] | null;
     studio_preset_messages?: StudioPresetMessageRow[] | null;
 };
 
@@ -36,9 +46,7 @@ function mapPresetMessages(rows: StudioPresetMessageRow[] | null | undefined): I
 }
 
 export function mapAgentRow(row: AgentRow): IAgent {
-    if (!row.languages || row.languages.length === 0) {
-        return { ...row, languages: [row.language] };
-    }
+
     return row;
 }
 
@@ -63,11 +71,20 @@ export function mapMessageRow(row: MessageRow): IMessage {
 }
 
 export function mapStudioRow(row: StudioRowWithRelations): IStudio {
+    const agents: IAgent[] = (row.studio_agents ?? [])
+        .map(relation => relation.agent)
+        .filter((agent): agent is AgentRow => Boolean(agent))
+        .map(agent => mapAgentRow(agent));
+    const members: IMember[] = (row.studio_members ?? [])
+        .map(relation => relation.member)
+        .filter((member): member is MemberRow => Boolean(member))
+        .map(member => mapMemberRow(member));
+
     return {
         ...row,
-        agents: extractIds(row.studio_agents ?? [], "agent_id"),
+        agents,
         presetMessages: mapPresetMessages(row.studio_preset_messages),
-        studio_members: [],
+        members,
     };
 }
 
