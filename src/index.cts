@@ -1,5 +1,4 @@
-import { initStorage } from "cloud-object-storage-lib";
-import type MinioStorage from "cloud-object-storage-lib/libs/minio.js";
+
 import type { PostgrestError, PostgrestResponse, PostgrestSingleResponse } from "@supabase/supabase-js";
 
 import { config } from "./env.cjs";
@@ -45,13 +44,9 @@ type ConversationMessagesResult = IConversation & {
 
 export class ChatKit {
     supabase?: ChatSupabaseClient;
-    storage?: MinioStorage;
     options: TChatKitConfig = { verboseLabel: "INFO", verboseLevel: 30 };
     bootAt = new Date();
-    redis?: {
-        consumeJSON: (stream: string, group: string, handleEntry: (data: any) => Promise<void>) => Promise<void>;
-        sendJSON: (stream: string, payload: Record<string, any>) => Promise<void>;
-    };
+
     _initialized = false;
 
     constructor(options?: TChatKitConfig) {
@@ -74,17 +69,9 @@ export class ChatKit {
             this.supabase = initSupabase(config.supabase);
         }
 
-        if (config.minio) {
-            this.storage = initStorage(config.minio) as MinioStorage;
-        }
 
-        if (config.redis) {
-            this.redis = {
-                consumeJSON: (stream: string, group: string, handleEntry: (data: any) => Promise<void>) =>
-                    consumeJSON(stream, group, handleEntry),
-                sendJSON: (stream: string, payload: Record<string, any>) => sendJSON(stream, payload),
-            };
-        }
+
+
         this._initialized = true;
         console.log(`Kit initialized ${new Date().toISOString()} ELAPSED: ${this.timeElapsedInSeconds()}s`);
     }

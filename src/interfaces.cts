@@ -1,5 +1,4 @@
-import type { TStorageConfig } from "cloud-object-storage-lib/interfaces";
-import type { createClient } from "redis";
+
 
 export type TSupabaseConfig = {
   url: string;
@@ -7,19 +6,10 @@ export type TSupabaseConfig = {
   schema?: "public";
 };
 
-export type TRedisConfig = {
-  client: ReturnType<typeof createClient>;
-  consumer: string;
-  PROCESSING_TIMEOUT_MS: number;
-  CLAIM_MIN_IDLE_MS: number;
-  READ_BLOCK_MS: number;
-  BATCH: number;
-};
+
 
 export interface IConnectionParams {
   supabase?: TSupabaseConfig;
-  minio?: TStorageConfig;
-  redis?: TRedisConfig;
 }
 
 export type TChatKitConfig = {
