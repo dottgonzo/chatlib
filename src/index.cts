@@ -344,6 +344,14 @@ export class ChatKit {
             messages,
         };
     }
+    public async getMemberStudios(member_id: string): Promise<IStudio[]> {
+        const supabase = this.ensureSupabase();
+        const response = (await supabase
+            .from("studio_members")
+            .select("studio:studios(*)")
+            .eq("member_id", member_id)) as PostgrestResponse<{ studio: StudioRowWithRelations }>;
+        return response.data?.map(row => mapStudioRow(row.studio)) ?? [];
+    }
 
     private async completeMessage(message_id: string, lastUpdatedAt: Date, tokens: string): Promise<IMessage> {
         const supabase = this.ensureSupabase();

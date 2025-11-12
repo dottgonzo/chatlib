@@ -173,6 +173,8 @@ export async function createConversations() {
 
     console.log("Conversation created", JSON.stringify(conversationDetails, null, 2));
 
+    const memberStudios = await chatKit.getMemberStudios(memberId);
+    console.log("Member studios", JSON.stringify(memberStudios, null, 2));
 }
 
 createConversations()
