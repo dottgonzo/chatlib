@@ -83,7 +83,7 @@ export interface Database {
                     name: string;
                     languages: string[];
                     language: string;
-                    master_studio: string | null;
+                    master_studio_id: string | null;
                     version: number;
                     test: boolean | null;
                 };
@@ -94,7 +94,7 @@ export interface Database {
                     name: string;
                     languages: string[];
                     language?: string;
-                    master_studio?: string | null;
+                    master_studio_id?: string | null;
                     version?: number;
                     test?: boolean | null;
                 };
@@ -105,7 +105,7 @@ export interface Database {
                     name?: string;
                     languages?: string[];
                     language?: string;
-                    master_studio?: string | null;
+                    master_studio_id?: string | null;
                     version?: number;
                     test?: boolean | null;
                 };

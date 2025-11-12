@@ -28,7 +28,7 @@ create table if not exists public.studios (
   name text not null,
   languages text[] not null default array['en']::text[],
   language text not null default 'en',
-  master_studio uuid references public.studios(id) on delete set null,
+  master_studio_id uuid references public.studios(id) on delete set null,
   version integer not null default 1,
   test boolean not null default false
 );

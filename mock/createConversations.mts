@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import type { PostgrestResponse, PostgrestSingleResponse } from "@supabase/supabase-js";
 import { ChatKit } from "../dist/index.cjs";
+import { getConfig } from "../dist/env.cjs";
 
 import type {
     IConversation,
@@ -16,6 +17,7 @@ import type {
     StudioInsert,
     StudioRow,
     StudioMemberRow,
+    StudioAgentRow,
 } from "../src/supabase/types";
 
 const testConversation1Data = {
@@ -34,10 +36,16 @@ const testMember1Data: MemberInsert = {
     test: true,
 };
 const agentPayload: AgentInsert = {
-    name: "Test Agent",
+    name: "default",
     languages: ["en"],
     language: "en",
-    test: true,
+    test: false,
+};
+const studioPayload: StudioInsert = {
+    name: "default",
+    languages: ["en"],
+    language: "en",
+    test: false,
 };
 export async function createConversations() {
     const chatKit = new ChatKit();
@@ -70,23 +78,15 @@ export async function createConversations() {
     }
 
 
-    const testConversationsResponse = await supabase
-        .from("conversations")
-        .select("id")
-        .eq("test", true) as PostgrestResponse<{ id: string }>;
-    if (testConversationsResponse.error) {
-        throw new Error(testConversationsResponse.error?.message ?? "Failed to load test conversations");
+
+    const conversationMembersResponse = await supabase
+        .from("conversation_members")
+        .delete()
+        .eq("test", true)
+    if (conversationMembersResponse.error) {
+        throw new Error(conversationMembersResponse.error?.message ?? "Failed to delete test conversation members");
     }
-    const testConversationIds = (testConversationsResponse.data ?? []).map(row => row.id);
-    if (testConversationIds.length > 0) {
-        const conversationMembersResponse = await supabase
-            .from("conversation_members")
-            .delete()
-            .in("conversation_id", testConversationIds);
-        if (conversationMembersResponse.error) {
-            throw new Error(conversationMembersResponse.error?.message ?? "Failed to delete test conversation members");
-        }
-    }
+
     const conversationsResponse = await supabase.from("conversations").delete().eq("test", true);
     if (conversationsResponse.error) {
         throw new Error(conversationsResponse.error?.message ?? "Failed to delete test conversations");
@@ -114,28 +114,49 @@ export async function createConversations() {
 
     const agentId = agentResponse.data.id as string;
 
-    const studioPayload: StudioInsert = {
-        name: "Test Studio",
-        languages: ["en"],
-        language: "en",
-        test: true,
-    };
-    const studioResponse = await supabase
+    const previousStudioResponse = await supabase
         .from("studios")
-        .insert(studioPayload)
-        .select()
-        .single() as PostgrestSingleResponse<StudioRow>;
-
-    if (studioResponse.error || !studioResponse.data) {
-        throw new Error(studioResponse.error?.message ?? "Failed to create test studio");
+        .select("*")
+        .eq("name", studioPayload.name)
+        .eq("test", false)
+        .maybeSingle() as PostgrestSingleResponse<StudioRow | null>;
+    if (previousStudioResponse.error) {
+        throw new Error(previousStudioResponse.error?.message ?? "Failed to load previous studio");
     }
-    const studioId = studioResponse.data.id as string;
-    const studioAgentPayload: StudioAgentInsert = { studio_id: studioId, agent_id: agentId, test: true };
-    const studioAgentResponse = await supabase
+    let studioId: string | undefined = undefined;
+    if (!previousStudioResponse.data) {
+
+        const studioResponse = await supabase
+            .from("studios")
+            .insert(studioPayload)
+            .select()
+            .single() as PostgrestSingleResponse<StudioRow>;
+
+        if (studioResponse.error || !studioResponse.data) {
+            throw new Error(studioResponse.error?.message ?? "Failed to create test studio");
+        }
+        studioId = studioResponse.data.id as string;
+    } else {
+        studioId = previousStudioResponse.data.id as string;
+    }
+
+    const previousStudioAgentResponse = await supabase
         .from("studio_agents")
-        .upsert(studioAgentPayload, { onConflict: "studio_id,agent_id" });
-    if (studioAgentResponse.error) {
-        throw new Error(studioAgentResponse.error?.message ?? "Failed to link studio and agent");
+        .select("*")
+        .eq("studio_id", studioId)
+        .eq("agent_id", agentId)
+        .maybeSingle() as PostgrestSingleResponse<StudioAgentRow | null>;
+    if (previousStudioAgentResponse.error) {
+        throw new Error(previousStudioAgentResponse.error?.message ?? "Failed to load previous studio agent");
+    }
+    if (!previousStudioAgentResponse.data) {
+        const studioAgentPayload: StudioAgentInsert = { studio_id: studioId, agent_id: agentId, test: false };
+        const studioAgentResponse = await supabase
+            .from("studio_agents")
+            .upsert(studioAgentPayload, { onConflict: "studio_id,agent_id" });
+        if (studioAgentResponse.error) {
+            throw new Error(studioAgentResponse.error?.message ?? "Failed to link studio and agent");
+        }
     }
 
 
@@ -151,18 +172,10 @@ export async function createConversations() {
 
     const memberId = memberResponse.data.id as string;
 
-    const studioMemberPayload: StudioMemberInsert = { studio_id: studioId, member_id: memberId, test: true };
-    const studioMemberResponse = await supabase
-        .from("studio_members")
-        .upsert(studioMemberPayload, { onConflict: "studio_id,member_id" })
-    if (studioMemberResponse.error) {
-        throw new Error(studioMemberResponse.error?.message ?? "Failed to link studio and member");
-    }
-
+    await chatKit.initializeMember(memberId);
     const testConversation1 = await chatKit.createConversationWithMessage(studioId, memberId, {
         message: testConversation1Data.message,
     });
-
     const conversationDetails = await chatKit.getConversationMessages(testConversation1.id);
 
     assert.equal(conversationDetails.id, testConversation1.id, "Conversation id mismatch");
