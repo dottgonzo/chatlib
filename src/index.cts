@@ -65,6 +65,7 @@ export class ChatKit {
             throw new Error("Kit is already initialized");
         }
         const config = getConfig(env);
+        console.log('config', config);
 
         if (config.supabase) {
             this.supabase = initSupabase(config.supabase);
