@@ -120,6 +120,7 @@ export interface Database {
                     type: string;
                     tokens: string;
                     sort_order: number;
+                    test: boolean | null;
                 };
                 Insert: {
                     id?: string;
@@ -129,6 +130,7 @@ export interface Database {
                     type: string;
                     tokens: string;
                     sort_order?: number;
+                    test?: boolean | null;
                 };
                 Update: {
                     id?: string;
@@ -138,6 +140,7 @@ export interface Database {
                     type?: string;
                     tokens?: string;
                     sort_order?: number;
+                    test?: boolean | null;
                 };
                 Relationships: [];
             };
@@ -214,14 +217,17 @@ export interface Database {
                 Row: {
                     studio_id: string;
                     agent_id: string;
+                    test: boolean | null;
                 };
                 Insert: {
                     studio_id: string;
                     agent_id: string;
+                    test?: boolean | null;
                 };
                 Update: {
                     studio_id?: string;
                     agent_id?: string;
+                    test?: boolean | null;
                 };
                 Relationships: [];
             };

@@ -46,7 +46,7 @@ export function mapMemberRow(row: MemberRow): IMember {
     return row;
 }
 
-function extractIds<T extends { [key: string]: string }>(entries: T[] | null | undefined, field: keyof T): string[] {
+function extractIds<T extends { [key: string]: string | boolean | null }>(entries: T[] | null | undefined, field: keyof T): string[] {
     if (!entries || entries.length === 0) return [];
     return entries.map(entry => String(entry[field]));
 }

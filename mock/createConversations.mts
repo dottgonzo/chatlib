@@ -25,30 +25,58 @@ const testMember1Data: MemberInsert = {
     lang: "en",
     test: true,
 };
-
+const agentPayload: AgentInsert = {
+    name: "Test Agent",
+    languages: ["en"],
+    language: "en",
+    test: true,
+};
 export async function createConversations() {
     const chatKit = new ChatKit();
     await chatKit.init();
 
-    const supabaseClient = chatKit.supabase;
-    if (!supabaseClient) {
+    const supabase = chatKit.supabase;
+    if (!supabase) {
         throw new Error("Supabase client not initialized");
     }
-    const supabase = supabaseClient;
 
     // clean existing test data
-    await supabase.from("messages").delete().eq("test", true);
-    await supabase.from("conversations").delete().eq("test", true);
-    await supabase.from("studios").delete().eq("test", true);
-    await supabase.from("agents").delete().eq("test", true);
-    await supabase.from("members").delete().eq("test", true);
+    const studioAgentsResponse = await supabase.from("studio_agents").delete().eq("test", true);
+    if (studioAgentsResponse.error) {
+        throw new Error(studioAgentsResponse.error?.message ?? "Failed to delete test studio agents");
+    }
+    const studioPresetMessagesResponse = await supabase.from("studio_preset_messages").delete().eq("test", true);
+    if (studioPresetMessagesResponse.error) {
+        throw new Error(studioPresetMessagesResponse.error?.message ?? "Failed to delete test studio preset messages");
+    }
 
-    const agentPayload: AgentInsert = {
-        name: "Test Agent",
-        languages: ["en"],
-        language: "en",
-        test: true,
-    };
+
+    const messagesResponse = await supabase.from("messages").delete().eq("test", true);
+    if (messagesResponse.error) {
+        throw new Error(messagesResponse.error?.message ?? "Failed to delete test messages");
+    }
+
+
+    const conversationMembersResponse = await supabase.from("conversation_members").delete().eq("test", true);
+    if (conversationMembersResponse.error) {
+        throw new Error(conversationMembersResponse.error?.message ?? "Failed to delete test conversation members");
+    }
+    const conversationsResponse = await supabase.from("conversations").delete().eq("test", true);
+    if (conversationsResponse.error) {
+        throw new Error(conversationsResponse.error?.message ?? "Failed to delete test conversations");
+    }
+    const agentsResponse = await supabase.from("agents").delete().eq("test", true);
+    if (agentsResponse.error) {
+        throw new Error(agentsResponse.error?.message ?? "Failed to delete test agents");
+    }
+    const studiosResponse = await supabase.from("studios").delete().eq("test", true);
+    if (studiosResponse.error) {
+        throw new Error(studiosResponse.error?.message ?? "Failed to delete test studios");
+    }
+    const membersResponse = await supabase.from("members").delete().eq("test", true);
+    if (membersResponse.error) {
+        throw new Error(membersResponse.error?.message ?? "Failed to delete test members");
+    }
     const agentResponse = await supabase
         .from("agents")
         .insert(agentPayload)
@@ -76,7 +104,7 @@ export async function createConversations() {
         throw new Error(studioResponse.error?.message ?? "Failed to create test studio");
     }
     const studioId = studioResponse.data.id as string;
-    const studioAgentPayload: StudioAgentInsert = { studio_id: studioId, agent_id: agentId };
+    const studioAgentPayload: StudioAgentInsert = { studio_id: studioId, agent_id: agentId, test: true };
     const studioAgentResponse = await supabase
         .from("studio_agents")
         .upsert(studioAgentPayload, { onConflict: "studio_id,agent_id" });

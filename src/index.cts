@@ -22,6 +22,7 @@ import type {
     ConversationRow,
     MessageInsert,
     MessageRow,
+    MemberRow,
 } from "./supabase/types";
 
 import type {
@@ -92,13 +93,14 @@ export class ChatKit {
         languages: string[],
         language: string,
         presetMessages: IConversationMessagePreset[],
+        test?: boolean,
     ) {
         void presetMessages; // reserved for future use
         const supabase = this.ensureSupabase();
 
         const response = (await supabase
             .from("agents")
-            .insert({ name, languages, language })
+            .insert({ name, languages, language, test })
             .select()
             .single()) as PostgrestSingleResponse<AgentRow>;
 
@@ -119,6 +121,18 @@ export class ChatKit {
 
         const members = [member_id];
 
+        const memberResponse = (await supabase
+            .from("members")
+            .select("*")
+            .eq("id", member_id)
+            .maybeSingle()) as PostgrestSingleResponse<MemberRow>;
+        if (memberResponse.error || !memberResponse.data) {
+            this.handleSupabaseError("Failed to load member", memberResponse.error);
+        }
+        let test = false;
+        if (memberResponse.data!.test) {
+            test = true;
+        }
         const candidateResponse = (await supabase
             .from("conversations")
             .select("*, conversation_members(member_id)")
@@ -144,6 +158,7 @@ export class ChatKit {
                 studio_id,
                 studio_version: studio.version,
                 title: options.message.tokens,
+                test,
             })
             .select()
             .single()) as PostgrestSingleResponse<ConversationRow>;
@@ -162,6 +177,20 @@ export class ChatKit {
 
     public async addMessage(conversation_id: string, member_id: string, options: TNewMessage): Promise<string[]> {
         const supabase = this.ensureSupabase();
+
+        const memberResponse = (await supabase
+            .from("members")
+            .select("*")
+            .eq("id", member_id)
+            .maybeSingle()) as PostgrestSingleResponse<MemberRow>;
+
+        if (memberResponse.error || !memberResponse.data) {
+            this.handleSupabaseError("Failed to load member", memberResponse.error);
+        }
+        let test = false;
+        if (memberResponse.data!.test) {
+            test = true;
+        }
 
         const existingMessagesResponse = (await supabase
             .from("messages")
@@ -187,6 +216,7 @@ export class ChatKit {
             tokens: options.tokens ?? null,
             status: "completed",
             message_type: DEFAULT_MESSAGE_TYPE,
+            test,
         };
 
         const newMessageResponse = (await supabase
@@ -212,6 +242,7 @@ export class ChatKit {
             agent_id: agentId,
             status: "pending",
             message_type: DEFAULT_MESSAGE_TYPE,
+            test,
         }));
 
         const agentMessagesResponse = (await supabase
@@ -339,6 +370,18 @@ export class ChatKit {
 
     private async insertConversationMembers(conversationId: string, memberIds: string[]): Promise<void> {
         const supabase = this.ensureSupabase();
+        const memberResponse = (await supabase
+            .from("members")
+            .select("*")
+            .eq("id", memberIds[0])
+            .maybeSingle()) as PostgrestSingleResponse<MemberRow>;
+        if (memberResponse.error || !memberResponse.data) {
+            this.handleSupabaseError("Failed to load member", memberResponse.error);
+        }
+        let test = false;
+        if (memberResponse.data!.test) {
+            test = true;
+        }
         const uniqueMembers = Array.from(new Set(memberIds));
         if (uniqueMembers.length === 0) {
             return;
@@ -347,6 +390,7 @@ export class ChatKit {
         const payload: ConversationMemberInsert[] = uniqueMembers.map(memberId => ({
             conversation_id: conversationId,
             member_id: memberId,
+            test,
         }));
 
         const response = await supabase
