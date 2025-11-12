@@ -30,8 +30,8 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.43.5",
     "cloud-object-storage-lib": "^0.1.24",
-    "nodemongooselib": "^0.0.10",
     "redis": "^5.9.0"
   }
 }

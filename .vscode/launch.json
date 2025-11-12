@@ -12,7 +12,10 @@
         "<node_internals>/**"
       ],
       "type": "node",
-      "env": {}
+      "env": {
+        "SUPABASE_URL": "https://nsdwriyiqngmcvuqfuwk.supabase.co",
+        "SUPABASE_SERVICE_ROLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5zZHdyaXlpcW5nbWN2dXFmdXdrIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2Mjg2ODYxMywiZXhwIjoyMDc4NDQ0NjEzfQ.hOjN3W81iAc20pE7E6QvaNUgP0VK_YvpQ2MOrUWbu0w"
+      }
     }
   ]
 }

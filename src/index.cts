@@ -1,42 +1,68 @@
 import { initStorage } from "cloud-object-storage-lib";
 import type MinioStorage from "cloud-object-storage-lib/libs/minio.js";
+import type { PostgrestError, PostgrestResponse, PostgrestSingleResponse } from "@supabase/supabase-js";
 
 import { config } from "./env.cjs";
-import { initDb, TMONGODB } from "./mongodb/db";
+import { initSupabase, type ChatSupabaseClient } from "./supabase/client";
+import {
+    mapAgentRow,
+    mapConversationRow,
+    mapMessageRow,
+    mapStudioRow,
+    type ConversationRowWithRelations,
+    type StudioRowWithRelations,
+} from "./supabase/mappers";
+import type {
+    IConversation,
+    IConversationMessagePreset,
+    IMessage,
+    IStudio,
+    AgentRow,
+    ConversationMemberInsert,
+    ConversationRow,
+    MessageInsert,
+    MessageRow,
+} from "./supabase/types";
 
-import type { IConversationMessagePreset, TChatKitConfig, TNewConversationWithMessageParams, TNewMessage } from "./interfaces.cjs";
+import type {
+
+    TChatKitConfig,
+    TNewConversationWithMessageParams,
+    TNewMessage,
+} from "./interfaces.cjs";
 import { consumeJSON, sendJSON } from "./redisq";
-import { IMessage } from "./mongodb/messages";
-import { IConversation } from "./mongodb/conversations";
-import { IStudio } from "./mongodb/studio";
+
+const DEFAULT_MESSAGE_TYPE = "text";
 
 export class ChatKit {
-    mongo?: TMONGODB;
+    supabase?: ChatSupabaseClient;
     storage?: MinioStorage;
     options: TChatKitConfig = { verboseLabel: "INFO", verboseLevel: 30 };
     bootAt = new Date();
     redis?: {
         consumeJSON: (stream: string, group: string, handleEntry: (data: any) => Promise<void>) => Promise<void>;
         sendJSON: (stream: string, payload: Record<string, any>) => Promise<void>;
-    }
+    };
     _initialized = false;
+
     constructor(options?: TChatKitConfig) {
         if (options?.verboseLabel) {
-            this.options.verboseLabel =
-                options.verboseLabel.toUpperCase() as TChatKitConfig["verboseLabel"];
+            this.options.verboseLabel = options.verboseLabel.toUpperCase() as TChatKitConfig["verboseLabel"];
         }
-        if (this.options.verboseLabel !== "NONE")
+        if (this.options.verboseLabel !== "NONE") {
             console.log(
-                `Kit boot ${new Date().toISOString()} with verbose level: ${this.options.verboseLabel} (${this.options.verboseLevel})`
+                `Kit boot ${new Date().toISOString()} with verbose level: ${this.options.verboseLabel} (${this.options.verboseLevel})`,
             );
+        }
     }
+
     public async init() {
         if (this._initialized) {
             throw new Error("Kit is already initialized");
         }
 
-        if (config.mongodb) {
-            this.mongo = await initDb(config.mongodb.uri, config.mongodb.options);
+        if (config.supabase) {
+            this.supabase = initSupabase(config.supabase);
         }
 
         if (config.minio) {
@@ -45,126 +71,292 @@ export class ChatKit {
 
         if (config.redis) {
             this.redis = {
-                consumeJSON: (stream: string, group: string, handleEntry: (data: any) => Promise<void>) => consumeJSON(stream, group, handleEntry),
+                consumeJSON: (stream: string, group: string, handleEntry: (data: any) => Promise<void>) =>
+                    consumeJSON(stream, group, handleEntry),
                 sendJSON: (stream: string, payload: Record<string, any>) => sendJSON(stream, payload),
-            }
+            };
         }
         this._initialized = true;
-        console.log(
-            `Kit initialized ${new Date().toISOString()} ELAPSED: ${this.timeElapsedInSeconds()}s`
-        );
+        console.log(`Kit initialized ${new Date().toISOString()} ELAPSED: ${this.timeElapsedInSeconds()}s`);
     }
+
     public timeElapsedInSeconds() {
         if (!this._initialized) {
             throw new Error("Kit is not initialized");
         }
         return (new Date().valueOf() - this.bootAt.valueOf()) / 1000;
     }
-    public async createAgent(name: string, languages: string[], language: string, presetMessages: IConversationMessagePreset[]) {
-        if (!this.mongo) {
-            throw new Error("MongoDB is not initialized");
+
+    public async createAgent(
+        name: string,
+        languages: string[],
+        language: string,
+        presetMessages: IConversationMessagePreset[],
+    ) {
+        void presetMessages; // reserved for future use
+        const supabase = this.ensureSupabase();
+
+        const response = (await supabase
+            .from("agents")
+            .insert({ name, languages, language })
+            .select()
+            .single()) as PostgrestSingleResponse<AgentRow>;
+
+        if (response.error || !response.data) {
+            this.handleSupabaseError("Failed to create agent", response.error);
         }
-        const agent = await this.mongo.agents.create({ name, languages, language, presetMessages });
-        return agent;
+
+        return mapAgentRow(response.data!);
     }
 
-    public async createConversationWithMessage(studio_id: string, member_id: string, options: TNewConversationWithMessageParams): Promise<IConversation> {
-        if (!this.mongo) {
-            throw new Error("MongoDB is not initialized");
-        }
-        const studio = await this.mongo.studio.findById(studio_id).read("secondaryPreferred").lean();
-        if (!studio) {
-            throw new Error("Studio not found");
-        }
-        const params = { studio: studio_id, members: options.members, title: options.message.tokens, authors: { $in: [member_id] } }
-        let previousConversation = await this.mongo.conversations.findOne(params).read("secondaryPreferred").lean();
-        if (!previousConversation) {
-            previousConversation = await this.mongo.conversations.findOne(params).read("primary").lean();
-            if (previousConversation) {
-                return previousConversation;
-            }
-        } else {
-            return previousConversation;
+    public async createConversationWithMessage(
+        studio_id: string,
+        member_id: string,
+        options: TNewConversationWithMessageParams,
+    ): Promise<IConversation> {
+        const supabase = this.ensureSupabase();
+        const studio = await this.fetchStudio(studio_id);
+
+        const members = [member_id];
+
+        const candidateResponse = (await supabase
+            .from("conversations")
+            .select("*, conversation_members(member_id)")
+            .eq("studio_id", studio_id)
+            .eq("title", options.message.tokens)) as PostgrestResponse<ConversationRowWithRelations>;
+
+        if (candidateResponse.error) {
+            this.handleSupabaseError("Failed to lookup existing conversation", candidateResponse.error);
         }
 
+        const candidates = (candidateResponse.data ?? []).map(row => mapConversationRow(row));
+        const existingConversation = candidates.find(conversation =>
+            this.membersMatch(conversation.members, members),
+        );
 
-        const conversation = await this.mongo.conversations.create({ studio: studio_id, studio_version: studio.version, members: options.members, title: options.message.tokens, authors: [member_id] });
-        await this.addMessage(conversation._id, member_id, { tokens: options.message.tokens });
+        if (existingConversation) {
+            return existingConversation;
+        }
+
+        const insertResponse = (await supabase
+            .from("conversations")
+            .insert({
+                studio_id,
+                studio_version: studio.version,
+                title: options.message.tokens,
+            })
+            .select()
+            .single()) as PostgrestSingleResponse<ConversationRow>;
+
+        if (insertResponse.error || !insertResponse.data) {
+            this.handleSupabaseError("Failed to create conversation", insertResponse.error);
+        }
+
+        const conversationId = insertResponse.data!.id;
+        await this.insertConversationMembers(conversationId, members);
+
+        const conversation = await this.fetchConversation(conversationId);
+        await this.addMessage(conversation.id, member_id, { tokens: options.message.tokens });
         return conversation;
     }
 
     public async addMessage(conversation_id: string, member_id: string, options: TNewMessage): Promise<string[]> {
-        if (!this.mongo) {
-            throw new Error("MongoDB is not initialized");
+        const supabase = this.ensureSupabase();
+
+        const existingMessagesResponse = (await supabase
+            .from("messages")
+            .select("*")
+            .eq("conversation_id", conversation_id)
+            .eq("member_id", member_id)
+            .order("created_at", { ascending: false })
+            .limit(1)) as PostgrestResponse<MessageRow>;
+
+        if (existingMessagesResponse.error) {
+            this.handleSupabaseError("Failed to lookup previous messages", existingMessagesResponse.error);
         }
-        let messages = await this.mongo.messages.find({ conversation: conversation_id, authorType: "user", authorId: member_id }).sort({ createdAt: -1 }).limit(1).read("primary").lean();
-        if (messages[0]?.tokens && options.tokens) {
-            return [messages[0]._id];
+
+        const existingMessage = existingMessagesResponse.data?.[0];
+        if (existingMessage?.tokens && options.tokens) {
+            return [existingMessage.id];
         }
-        const newMessage = await this.mongo.messages.create({ conversation: conversation_id, authorType: "user", authorId: member_id, tokens: options.tokens, status: "completed" });
-        let message = await this.mongo.messages.findById(newMessage._id).read("secondaryPreferred").lean();
-        if (!message) {
-            message = await this.mongo.messages.findById(newMessage._id).read("primary").lean();
-            if (!message) {
-                throw new Error("Message not found");
-            }
+
+        const newMessagePayload: MessageInsert = {
+            conversation_id,
+            member_id,
+            agent_id: null,
+            tokens: options.tokens ?? null,
+            status: "completed",
+            message_type: DEFAULT_MESSAGE_TYPE,
+        };
+
+        const newMessageResponse = (await supabase
+            .from("messages")
+            .insert(newMessagePayload)
+            .select()
+            .single()) as PostgrestSingleResponse<MessageRow>;
+
+        if (newMessageResponse.error || !newMessageResponse.data) {
+            this.handleSupabaseError("Failed to create user message", newMessageResponse.error);
         }
-        const conversation = await this.mongo.conversations.findById(conversation_id).lean()
-        if (!conversation) {
-            throw new Error("Conversation not found");
+
+        const conversation = await this.fetchConversation(conversation_id);
+        const studio = await this.fetchStudio(conversation.studio_id);
+        const agentIds: string[] = studio.agents ?? [];
+        if (agentIds.length === 0) {
+            return [];
         }
-        const studio = await this.mongo.studio.findById(conversation.studio).populate("agents").read("secondaryPreferred").lean();
-        if (!studio) {
+
+        const agentMessagesPayload: MessageInsert[] = agentIds.map((agentId: string) => ({
+            conversation_id,
+            member_id: null,
+            agent_id: agentId,
+            status: "pending",
+            message_type: DEFAULT_MESSAGE_TYPE,
+        }));
+
+        const agentMessagesResponse = (await supabase
+            .from("messages")
+            .insert(agentMessagesPayload)
+            .select("id")) as PostgrestResponse<Pick<MessageRow, "id">>;
+
+        if (agentMessagesResponse.error) {
+            this.handleSupabaseError("Failed to queue agent messages", agentMessagesResponse.error);
+        }
+
+        return (agentMessagesResponse.data ?? []).map(row => row.id);
+    }
+
+    private async completeMessage(message_id: string, lastUpdatedAt: Date, tokens: string): Promise<IMessage> {
+        const supabase = this.ensureSupabase();
+        const isoUpdatedAt = lastUpdatedAt.toISOString();
+
+        const currentMessageResponse = (await supabase
+            .from("messages")
+            .select("*")
+            .eq("id", message_id)
+            .eq("updated_at", isoUpdatedAt)
+            .maybeSingle()) as PostgrestSingleResponse<MessageRow | null>;
+
+        if (currentMessageResponse.error) {
+            this.handleSupabaseError("Failed to verify message state", currentMessageResponse.error);
+        }
+
+        if (!currentMessageResponse.data) {
+            throw new Error("Message is outdated");
+        }
+
+        const updatedMessageResponse = (await supabase
+            .from("messages")
+            .update({ tokens })
+            .eq("id", message_id)
+            .select()
+            .single()) as PostgrestSingleResponse<MessageRow>;
+
+        if (updatedMessageResponse.error || !updatedMessageResponse.data) {
+            this.handleSupabaseError("Failed to update message tokens", updatedMessageResponse.error);
+        }
+
+        return mapMessageRow(updatedMessageResponse.data!);
+    }
+
+    public async completeWithAi(message_id: string): Promise<IMessage> {
+        const supabase = this.ensureSupabase();
+
+        const response = (await supabase
+            .from("messages")
+            .select("*")
+            .eq("id", message_id)
+            .maybeSingle()) as PostgrestSingleResponse<MessageRow | null>;
+
+        if (response.error) {
+            this.handleSupabaseError("Failed to load message", response.error);
+        }
+
+        if (!response.data) {
+            throw new Error("Message not found");
+        }
+
+        return mapMessageRow(response.data);
+    }
+
+    private ensureSupabase(): ChatSupabaseClient {
+        if (!this.supabase) {
+            throw new Error("Supabase is not initialized");
+        }
+        return this.supabase;
+    }
+
+    private handleSupabaseError(context: string, error: PostgrestError | null): never {
+        const detail = error?.details ? ` (${error.details})` : "";
+        throw new Error(`${context}${error?.message ? `: ${error.message}` : ""}${detail}`);
+    }
+
+    private async fetchStudio(studioId: string): Promise<IStudio> {
+        const supabase = this.ensureSupabase();
+        const response = (await supabase
+            .from("studios")
+            .select("*, studio_agents(agent_id), studio_preset_messages(type,tokens,sort_order)")
+            .eq("id", studioId)
+            .maybeSingle()) as PostgrestSingleResponse<StudioRowWithRelations | null>;
+
+        if (response.error) {
+            this.handleSupabaseError("Failed to load studio", response.error);
+        }
+
+        if (!response.data) {
             throw new Error("Studio not found");
         }
-        let agentMessages: string[] = [];
-        for (const agent of studio.agents) {
-            const agentMessage = {
-                conversation: conversation_id,
-                authorType: "agent",
-                authorId: agent._id,
-                status: "pending",
-            }
-            const newAgentMessage = await this.mongo.messages.create(agentMessage);
-            agentMessages.push(newAgentMessage._id.toString());
-        }
-        return agentMessages;
+
+        return mapStudioRow(response.data);
     }
-    private async completeMessage(message_id: string, lastUpdatedAt: Date, tokens: string): Promise<IMessage> {
-        if (!this.mongo) {
-            throw new Error("MongoDB is not initialized");
-        }
-        const oldMessage = await this.mongo.messages.findOne({ _id: message_id, updatedAt: lastUpdatedAt }).read("secondaryPreferred").lean();
-        if (!oldMessage) {
-            const oldMessage = await this.mongo.messages.findOne({ _id: message_id, updatedAt: lastUpdatedAt }).read("primary").lean();
-            if (!oldMessage) {
-                throw new Error("Message is outdated");
-            }
+
+    private async fetchConversation(conversationId: string): Promise<IConversation> {
+        const supabase = this.ensureSupabase();
+        const response = (await supabase
+            .from("conversations")
+            .select("*, conversation_members(member_id)")
+            .eq("id", conversationId)
+            .maybeSingle()) as PostgrestSingleResponse<ConversationRowWithRelations | null>;
+
+        if (response.error) {
+            this.handleSupabaseError("Failed to load conversation", response.error);
         }
 
-        await this.mongo.messages.updateOne({ _id: message_id }, { $set: { tokens } });
-        let message = await this.mongo.messages.findById(message_id).read("secondaryPreferred").lean();
-        if (!message) {
-            message = await this.mongo.messages.findById(message_id).read("primary").lean();
-            if (!message) {
-                throw new Error("Message not created?!");
-            }
-        }
-        return message;
-    }
-    public async completeWithAi(message_id: string): Promise<IMessage> {
-        if (!this.mongo) {
-            throw new Error("MongoDB is not initialized");
-        }
-        let message = await this.mongo.messages.findById(message_id).read("secondaryPreferred").lean();
-        if (!message) {
-            message = await this.mongo.messages.findById(message_id).read("primary").lean();
-            if (!message) {
-                throw new Error("Message not found");
-            }
+        if (!response.data) {
+            throw new Error("Conversation not found");
         }
 
-        return message;
+        return mapConversationRow(response.data);
+    }
+
+    private membersMatch(existingMembers: string[], expectedMembers: string[]): boolean {
+        if (existingMembers.length !== expectedMembers.length) {
+            return false;
+        }
+        const existingSet = new Set(existingMembers);
+        return expectedMembers.every(member => existingSet.has(member));
+    }
+
+    private async insertConversationMembers(conversationId: string, memberIds: string[]): Promise<void> {
+        const supabase = this.ensureSupabase();
+        const uniqueMembers = Array.from(new Set(memberIds));
+        if (uniqueMembers.length === 0) {
+            return;
+        }
+
+        const payload: ConversationMemberInsert[] = uniqueMembers.map(memberId => ({
+            conversation_id: conversationId,
+            member_id: memberId,
+        }));
+
+        const response = await supabase
+            .from("conversation_members")
+            .upsert(payload, { onConflict: "conversation_id,member_id" });
+
+        if (response.error) {
+            this.handleSupabaseError("Failed to link conversation members", response.error);
+        }
     }
 }
+
 export const chatkit: InstanceType<typeof ChatKit> = new ChatKit();

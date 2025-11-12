@@ -1,10 +1,10 @@
 import type { TStorageConfig } from "cloud-object-storage-lib/interfaces";
-import type { ConnectOptions } from "mongoose";
 import type { createClient } from "redis";
 
-export type TMongoDBConnection = {
-  uri: string;
-  options?: ConnectOptions;
+export type TSupabaseConfig = {
+  url: string;
+  serviceRoleKey: string;
+  schema?: "public";
 };
 
 export type TRedisConfig = {
@@ -16,18 +16,11 @@ export type TRedisConfig = {
   BATCH: number;
 };
 
-
-
 export interface IConnectionParams {
-  mongodb?: TMongoDBConnection;
+  supabase?: TSupabaseConfig;
   minio?: TStorageConfig;
-
   redis?: TRedisConfig;
 }
-
-// to be merged with blueconv
-
-
 
 export type TChatKitConfig = {
   verboseLevel?: number;
@@ -40,19 +33,21 @@ export type TChatKitConfig = {
   | "TRACE"
   | "NONE";
 };
-
-export interface IConversationMessagePreset {
-  type: string;
-  tokens: string;
-}
-
 export type TNewMessage = {
-  tokens: string
-  model?: string
-}
+  tokens: string;
+  model?: string;
+};
+
 
 export type TNewConversationWithMessageParams = {
-  agents: any[];
-  members?: any[];
-  message: TNewMessage
-}
+  message: TNewMessage;
+};
+
+export type {
+  IConversationMessagePreset,
+  IMember,
+  IAgent,
+  IConversation,
+  IMessage,
+  IStudio,
+} from "./supabase/types";

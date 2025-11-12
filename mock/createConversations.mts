@@ -1,59 +1,111 @@
+import type { PostgrestSingleResponse } from "@supabase/supabase-js";
 import { ChatKit } from "../dist/index.cjs";
-
-const testStudio1Data = {
-    name: "Test Studio",
-    languages: ["en"],
-    language: "en",
-    test: true,
-}
-
-const testAgent1Data = {
-    name: "Test Agent",
-    languages: ["en"],
-    language: "en",
-    test: true,
-}
+import type {
+    AgentInsert,
+    AgentRow,
+    MemberInsert,
+    MemberRow,
+    StudioAgentInsert,
+    StudioInsert,
+    StudioRow,
+} from "../src/supabase/types";
 
 const testConversation1Data = {
-    members: ["123"],
     message: {
         tokens: "Hello, how are you? This is a test conversation.",
     },
     test: true,
-}
-const testMember1Data = {
-    name: "Test Member",
-    email: "test@test.com",
-    phone: "1234567890",
-    status: "active",
+};
+
+const testMember1Data: MemberInsert = {
+    email: "test@example.com",
     role: "user",
+    status: "active",
+    display_name: "Test Member",
+    lang: "en",
     test: true,
-}
+};
+
 export async function createConversations() {
     const chatKit = new ChatKit();
     await chatKit.init();
 
+    const supabaseClient = chatKit.supabase;
+    if (!supabaseClient) {
+        throw new Error("Supabase client not initialized");
+    }
+    const supabase = supabaseClient;
 
-    await chatKit.mongo?.agents.deleteMany({ test: true });
-    await chatKit.mongo!.studio.deleteMany({ test: true });
+    // clean existing test data
+    await supabase.from("messages").delete().eq("test", true);
+    await supabase.from("conversations").delete().eq("test", true);
+    await supabase.from("studios").delete().eq("test", true);
+    await supabase.from("agents").delete().eq("test", true);
+    await supabase.from("members").delete().eq("test", true);
 
-    await chatKit.mongo!.conversations.deleteMany({ test: true });
-    await chatKit.mongo!.messages.deleteMany({ test: true });
-    await chatKit.mongo!.members.deleteMany({ test: true });
+    const agentPayload: AgentInsert = {
+        name: "Test Agent",
+        languages: ["en"],
+        language: "en",
+        test: true,
+    };
+    const agentResponse = await supabase
+        .from("agents")
+        .insert(agentPayload)
+        .select()
+        .single() as PostgrestSingleResponse<AgentRow>;
+    if (agentResponse.error || !agentResponse.data) {
+        throw new Error(agentResponse.error?.message ?? "Failed to create test agent");
+    }
 
-    const testAgent1 = await chatKit.mongo?.agents.create(testAgent1Data);
+    const agentId = agentResponse.data.id as string;
 
-    const testStudio1 = await chatKit.mongo?.studio.create({ ...testStudio1Data, agents: [testAgent1?._id] });
+    const studioPayload: StudioInsert = {
+        name: "Test Studio",
+        languages: ["en"],
+        language: "en",
+        test: true,
+    };
+    const studioResponse = await supabase
+        .from("studios")
+        .insert(studioPayload)
+        .select()
+        .single() as PostgrestSingleResponse<StudioRow>;
 
-    const testMember1 = await chatKit.mongo?.members.create(testMember1Data);
+    if (studioResponse.error || !studioResponse.data) {
+        throw new Error(studioResponse.error?.message ?? "Failed to create test studio");
+    }
+    const studioId = studioResponse.data.id as string;
+    const studioAgentPayload: StudioAgentInsert = { studio_id: studioId, agent_id: agentId };
+    const studioAgentResponse = await supabase
+        .from("studio_agents")
+        .upsert(studioAgentPayload, { onConflict: "studio_id,agent_id" });
+    if (studioAgentResponse.error) {
+        throw new Error(studioAgentResponse.error?.message ?? "Failed to link studio and agent");
+    }
 
-    const testConversation1 = await chatKit.createConversationWithMessage(testStudio1?._id, testMember1?._id, { agents: [testAgent1?._id], message: testConversation1Data.message });
+
+    const memberResponse = await supabase
+        .from("members")
+        .insert(testMember1Data)
+        .select()
+        .single() as PostgrestSingleResponse<MemberRow>;
+    if (memberResponse.error || !memberResponse.data) {
+        throw new Error(memberResponse.error?.message ?? "Failed to create test member");
+    }
+    const memberId = memberResponse.data.id as string;
+
+    const testConversation1 = await chatKit.createConversationWithMessage(studioId, memberId, {
+        message: testConversation1Data.message,
+    });
 
     console.log(testConversation1);
 }
 
-createConversations().then(() => {
-    console.log("Conversations created");
-}).catch((error) => {
-    console.error(error);
-});
+createConversations()
+    .then(() => {
+        console.log("Conversations created");
+    })
+    .catch(error => {
+        console.error(error);
+    });
