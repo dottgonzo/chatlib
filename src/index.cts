@@ -33,7 +33,6 @@ import type {
     TNewConversationWithMessageParams,
     TNewMessage,
 } from "./interfaces.cjs";
-import { consumeJSON, sendJSON } from "./redisq";
 
 const DEFAULT_MESSAGE_TYPE = "text";
 
