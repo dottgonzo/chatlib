@@ -5,6 +5,7 @@ import type { Database } from "./types";
 export type ChatSupabaseClient = SupabaseClient<Database, "public">;
 
 export function initSupabase(config: TSupabaseConfig): ChatSupabaseClient {
+    console.log("Initializing supabase", config);
     const options: Parameters<typeof createClient<Database, "public">>[2] = {
         auth: { persistSession: false },
     };
