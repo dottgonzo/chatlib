@@ -1,18 +1,16 @@
 import { IConnectionParams } from "./interfaces.cjs";
 
 
+export function getConfig(env: any): IConnectionParams {
+  return {
+    supabase: env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY
+      ? {
+        url: env.SUPABASE_URL,
+        serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
+        schema: env.SUPABASE_SCHEMA === "public" ? "public" : undefined,
+      }
+      : undefined,
+  };
+}
 
 
-export const config: IConnectionParams = {
-  supabase: process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY
-    ? {
-      url: process.env.SUPABASE_URL,
-      serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
-      schema: process.env.SUPABASE_SCHEMA === "public" ? "public" : undefined,
-    }
-    : undefined,
-
-
-
-
-};

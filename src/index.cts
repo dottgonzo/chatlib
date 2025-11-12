@@ -1,7 +1,6 @@
 
 import type { PostgrestError, PostgrestResponse, PostgrestSingleResponse } from "@supabase/supabase-js";
 
-import { config } from "./env.cjs";
 import { initSupabase, type ChatSupabaseClient } from "./supabase/client";
 import {
     mapAgentRow,
@@ -29,10 +28,12 @@ import type {
 
 import type {
 
+    IConnectionParams,
     TChatKitConfig,
     TNewConversationWithMessageParams,
     TNewMessage,
 } from "./interfaces.cjs";
+import { getConfig } from "./env.cjs";
 
 const DEFAULT_MESSAGE_TYPE = "text";
 
@@ -59,10 +60,11 @@ export class ChatKit {
         }
     }
 
-    public async init() {
+    public async init(env: any) {
         if (this._initialized) {
             throw new Error("Kit is already initialized");
         }
+        const config = getConfig(env);
 
         if (config.supabase) {
             this.supabase = initSupabase(config.supabase);

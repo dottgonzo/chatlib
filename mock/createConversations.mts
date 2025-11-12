@@ -41,7 +41,7 @@ const agentPayload: AgentInsert = {
 };
 export async function createConversations() {
     const chatKit = new ChatKit();
-    await chatKit.init();
+    await chatKit.init(process.env);
 
     const supabase = chatKit.supabase;
     if (!supabase) {
