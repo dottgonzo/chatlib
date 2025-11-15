@@ -9,7 +9,7 @@ import {
     mapMessageRow,
     mapStudioRow,
     type ConversationRowWithRelations,
-    type StudioRowWithRelations,
+    type MemberStudioRowWithRelations,
 } from "./supabase/mappers";
 import type {
     IAgent,
@@ -21,16 +21,12 @@ import type {
     AgentRow,
     ConversationMemberInsert,
     ConversationRow,
+    MemberRow,
+    MemberStudioInsert,
+    MemberStudioRow,
     MessageInsert,
     MessageRow,
-    MemberRow,
-    StudioAgentInsert,
-    StudioAgentRow,
-    StudioMemberInsert,
     StudioRow,
-    StudioInsert,
-    StudioMemberRow,
-    ConversationMemberRow,
 } from "./supabase/types";
 
 import type {
@@ -126,30 +122,23 @@ export class ChatKit {
             this.handleSupabaseError("Failed to load parent studio", parentStudioResponse.error);
         }
         const parentStudio = parentStudioResponse.data!;
-        const newDerivativeStudio: StudioInsert = {
+        const newMemberStudio: MemberStudioInsert = {
             name: `${parentStudio.name}-${member_id}`,
-            languages: parentStudio.languages,
-            language: parentStudio.language,
-            master_studio_id: parentStudio.id,
-            version: parentStudio.version + 1,
+            studio_id: parentStudio.id,
+            member_id,
             test,
         };
-        const derivativeStudioResponse = (await supabase
-            .from("studios")
-            .insert(newDerivativeStudio)
+        const memberStudioResponse = (await supabase
+            .from("member_studios")
+            .insert(newMemberStudio)
             .select()
-            .single()) as PostgrestSingleResponse<StudioRow>;
-        if (derivativeStudioResponse.error || !derivativeStudioResponse.data) {
-            this.handleSupabaseError("Failed to create studio", derivativeStudioResponse.error);
+            .single()) as PostgrestSingleResponse<MemberStudioRow>;
+
+        if (memberStudioResponse.error || !memberStudioResponse.data) {
+            this.handleSupabaseError("Failed to create member studio", memberStudioResponse.error);
         }
-        const studioMemberPayload: StudioMemberInsert = { studio_id: derivativeStudioResponse.data!.id, member_id, test: true };
-        const studioMemberResponse = await this.ensureSupabase()
-            .from("studio_members")
-            .upsert(studioMemberPayload, { onConflict: "studio_id,member_id" })
-        if (studioMemberResponse.error) {
-            this.handleSupabaseError("Failed to link studio and member", studioMemberResponse.error);
-        }
-        return derivativeStudioResponse.data!.id as string;
+
+        return memberStudioResponse.data!.id as string;
     }
     public async initializeMember(member_id: string): Promise<void> {
 
@@ -162,85 +151,101 @@ export class ChatKit {
             this.handleSupabaseError("Failed to load member", memberResponse.error);
         }
         const test = memberResponse.data!.test!;
-        const defaultStudio = await this.fetchStudioByName("default");
-        const studioId = defaultStudio.id as string;
-        await this.createDerivativeStudio(studioId, member_id, test);
+        const defaultStudio = await this.fetchStudioTemplateByName("default");
+        await this.createDerivativeStudio(defaultStudio.id as string, member_id, test);
 
     }
     public async deleteMember(member_id: string): Promise<void> {
         const supabase = this.ensureSupabase();
 
-        const previousStudioMembersResponse = (await supabase
-            .from("studio_members")
-            .select("*")
-            .eq("member_id", member_id)) as PostgrestResponse<StudioMemberRow>;
-        if (previousStudioMembersResponse.error) {
-            this.handleSupabaseError("Failed to load previous studio members", previousStudioMembersResponse.error);
+        const memberStudiosResponse = (await supabase
+            .from("member_studios")
+            .select("id")
+            .eq("member_id", member_id)) as PostgrestResponse<Pick<MemberStudioRow, "id">>;
+        if (memberStudiosResponse.error) {
+            this.handleSupabaseError("Failed to load member studios", memberStudiosResponse.error);
         }
-        const previousStudioMembers = previousStudioMembersResponse.data ?? [];
-        if (previousStudioMembers.length > 0) {
-            for (const studioMember of previousStudioMembers) {
+        const memberStudioIds = (memberStudiosResponse.data ?? []).map(memberStudio => memberStudio.id);
 
-                const studioMemberResponse = await supabase
-                    .from("studio_members")
-                    .delete()
-                    .eq("studio_id", studioMember.studio_id)
-                    .eq("member_id", member_id);
-                if (studioMemberResponse.error) {
-                    this.handleSupabaseError("Failed to delete studio member", studioMemberResponse.error);
-                }
-                const conversationMembersResponse = await supabase
-                    .from("conversation_members")
-                    .delete()
-                    .eq("studio_id", studioMember.studio_id)
-                    .eq("member_id", member_id);
-                if (conversationMembersResponse.error) {
-                    this.handleSupabaseError("Failed to delete conversation members", conversationMembersResponse.error);
-                }
-                const messagesResponse = await supabase
-                    .from("messages")
-                    .delete()
-                    .eq("studio_id", studioMember.studio_id)
-                    .eq("member_id", member_id);
-                if (messagesResponse.error) {
-                    this.handleSupabaseError("Failed to delete messages", messagesResponse.error);
-                }
-                const conversationsResponse = await supabase
-                    .from("conversations")
-                    .delete()
-                    .eq("studio_id", studioMember.studio_id)
-                    .eq("member_id", member_id);
-                if (conversationsResponse.error) {
-                    this.handleSupabaseError("Failed to delete conversations", conversationsResponse.error);
-                }
+        let conversationIds: string[] = [];
+        if (memberStudioIds.length > 0) {
+            const conversationsResponse = (await supabase
+                .from("conversations")
+                .select("id")
+                .in("member_studio_id", memberStudioIds)) as PostgrestResponse<Pick<ConversationRow, "id">>;
+            if (conversationsResponse.error) {
+                this.handleSupabaseError("Failed to load member conversations", conversationsResponse.error);
+            }
+            conversationIds = (conversationsResponse.data ?? []).map(conversation => conversation.id);
+        }
 
-                const studioResponse = await supabase
-                    .from("studios")
-                    .delete()
-                    .eq("id", studioMember.studio_id);
-                if (studioResponse.error) {
-                    this.handleSupabaseError("Failed to delete studio", studioResponse.error);
-                }
+        if (conversationIds.length > 0) {
+            const conversationMessagesResponse = await supabase
+                .from("messages")
+                .delete()
+                .in("conversation_id", conversationIds);
+            if (conversationMessagesResponse.error) {
+                this.handleSupabaseError("Failed to delete conversation messages", conversationMessagesResponse.error);
+            }
 
+            const conversationMembersResponse = await supabase
+                .from("conversation_members")
+                .delete()
+                .in("conversation_id", conversationIds);
+            if (conversationMembersResponse.error) {
+                this.handleSupabaseError(
+                    "Failed to delete conversation members for conversations",
+                    conversationMembersResponse.error,
+                );
+            }
+
+            const conversationsDeleteResponse = await supabase
+                .from("conversations")
+                .delete()
+                .in("id", conversationIds);
+            if (conversationsDeleteResponse.error) {
+                this.handleSupabaseError("Failed to delete conversations", conversationsDeleteResponse.error);
             }
         }
 
+        if (memberStudioIds.length > 0) {
+            const memberStudiosDeleteResponse = await supabase
+                .from("member_studios")
+                .delete()
+                .in("id", memberStudioIds);
+            if (memberStudiosDeleteResponse.error) {
+                this.handleSupabaseError("Failed to delete member studios", memberStudiosDeleteResponse.error);
+            }
+        }
 
-        // const memberResponse = (await supabase
-        //     .from("members")
-        //     .delete()
-        //     .eq("id", member_id)) as PostgrestResponse<MemberRow>;
-        // if (memberResponse.error) {
-        //     this.handleSupabaseError("Failed to delete member", memberResponse.error);
-        // }
+        const memberMessagesResponse = await supabase.from("messages").delete().eq("member_id", member_id);
+        if (memberMessagesResponse.error) {
+            this.handleSupabaseError("Failed to delete member messages", memberMessagesResponse.error);
+        }
+
+        const memberConversationMembersResponse = await supabase
+            .from("conversation_members")
+            .delete()
+            .eq("member_id", member_id);
+        if (memberConversationMembersResponse.error) {
+            this.handleSupabaseError("Failed to delete member conversation memberships", memberConversationMembersResponse.error);
+        }
+
+        const memberResponse = (await supabase
+            .from("members")
+            .delete()
+            .eq("id", member_id)) as PostgrestResponse<MemberRow>;
+        if (memberResponse.error) {
+            this.handleSupabaseError("Failed to delete member", memberResponse.error);
+        }
     }
     public async createConversationWithMessage(
-        studio_id: string,
+        member_studio_id: string,
         member_id: string,
         options: TNewConversationWithMessageParams,
     ): Promise<IConversation> {
         const supabase = this.ensureSupabase();
-        const studio = await this.fetchStudioById(studio_id);
+        const studio = await this.fetchMemberStudioById(member_studio_id);
 
         const members = [member_id];
 
@@ -259,7 +264,7 @@ export class ChatKit {
         const candidateResponse = (await supabase
             .from("conversations")
             .select("*, conversation_members(member_id)")
-            .eq("studio_id", studio_id)
+            .eq("member_studio_id", member_studio_id)
             .eq("title", options.message.tokens)) as PostgrestResponse<ConversationRowWithRelations>;
 
         if (candidateResponse.error) {
@@ -278,7 +283,7 @@ export class ChatKit {
         const insertResponse = (await supabase
             .from("conversations")
             .insert({
-                studio_id,
+                member_studio_id,
                 studio_version: studio.version,
                 title: options.message.tokens,
                 test,
@@ -353,14 +358,14 @@ export class ChatKit {
         }
 
         const conversation = await this.fetchConversation(conversation_id);
-        const studio = await this.fetchStudioById(conversation.studio_id);
+        const studio = await this.fetchMemberStudioById(conversation.member_studio_id);
         let studioAgents: IAgent[] = studio.agents ?? [];
 
         if (studioAgents.length === 0) {
             const studioAgentsResponse = (await supabase
                 .from("studio_agents")
                 .select("agent:agents(*)")
-                .eq("studio_id", conversation.studio_id)) as PostgrestResponse<{ agent: AgentRow | null }>;
+                .eq("studio_id", studio.studio_id)) as PostgrestResponse<{ agent: AgentRow | null }>;
 
             if (studioAgentsResponse.error) {
                 this.handleSupabaseError("Failed to load studio agents", studioAgentsResponse.error);
@@ -402,7 +407,7 @@ export class ChatKit {
         const supabase = this.ensureSupabase();
 
         const conversation = await this.fetchConversation(conversation_id);
-        const studio = await this.fetchStudioById(conversation.studio_id);
+        const studio = await this.fetchMemberStudioById(conversation.member_studio_id);
 
         const messagesResponse = (await supabase
             .from("messages")
@@ -435,7 +440,7 @@ export class ChatKit {
             const agentsResponse = (await supabase
                 .from("studio_agents")
                 .select("agent:agents(*)")
-                .eq("studio_id", studio.id)) as PostgrestResponse<{ agent: AgentRow | null }>;
+                .eq("studio_id", studio.studio_id)) as PostgrestResponse<{ agent: AgentRow | null }>;
 
             if (agentsResponse.error) {
                 this.handleSupabaseError("Failed to load studio agents", agentsResponse.error);
@@ -462,10 +467,17 @@ export class ChatKit {
     public async getMemberStudios(member_id: string): Promise<IStudio[]> {
         const supabase = this.ensureSupabase();
         const response = (await supabase
-            .from("studio_members")
-            .select("studio:studios(*)")
-            .eq("member_id", member_id)) as PostgrestResponse<{ studio: StudioRowWithRelations }>;
-        return response.data?.map(row => mapStudioRow(row.studio)) ?? [];
+            .from("member_studios")
+            .select(
+                "*, member:members(*), template:studios(*, studio_agents(agent:agents(*)), studio_preset_messages(type,tokens,sort_order))",
+            )
+            .eq("member_id", member_id)) as PostgrestResponse<MemberStudioRowWithRelations>;
+
+        if (response.error) {
+            this.handleSupabaseError("Failed to load member studios", response.error);
+        }
+
+        return response.data?.map(row => mapStudioRow(row)) ?? [];
     }
 
     private async completeMessage(message_id: string, lastUpdatedAt: Date, tokens: string): Promise<IMessage> {
@@ -533,40 +545,43 @@ export class ChatKit {
         throw new Error(`${context}${error?.message ? `: ${error.message}` : ""}${detail}`);
     }
 
-    private async fetchStudioById(studioId: string): Promise<IStudio> {
+    private async fetchMemberStudioById(memberStudioId: string): Promise<IStudio> {
         const supabase = this.ensureSupabase();
         const response = (await supabase
-            .from("studios")
-            .select("*, studio_agents(agent:agents(*)), studio_members(member:members(*)), studio_preset_messages(type,tokens,sort_order)")
-            .eq("id", studioId)
-            .maybeSingle()) as PostgrestSingleResponse<StudioRowWithRelations | null>;
+            .from("member_studios")
+            .select(
+                "*, member:members(*), template:studios(*, studio_agents(agent:agents(*)), studio_preset_messages(type,tokens,sort_order))",
+            )
+            .eq("id", memberStudioId)
+            .maybeSingle()) as PostgrestSingleResponse<MemberStudioRowWithRelations | null>;
 
         if (response.error) {
-            this.handleSupabaseError("Failed to load studio", response.error);
+            this.handleSupabaseError("Failed to load member studio", response.error);
         }
 
         if (!response.data) {
-            throw new Error("Studio not found");
+            throw new Error("Member studio not found");
         }
 
         return mapStudioRow(response.data);
     }
-    private async fetchStudioByName(studioName: string): Promise<IStudio> {
+    private async fetchStudioTemplateByName(studioName: string): Promise<StudioRow> {
         const supabase = this.ensureSupabase();
         const response = (await supabase
             .from("studios")
-            .select("*, studio_agents(agent:agents(*)), studio_members(member:members(*)), studio_preset_messages(type,tokens,sort_order)")
+            .select("*")
             .eq("name", studioName)
-            .maybeSingle()) as PostgrestSingleResponse<StudioRowWithRelations | null>;
+            .maybeSingle()) as PostgrestSingleResponse<StudioRow | null>;
+
         if (response.error) {
-            this.handleSupabaseError("Failed to load studio", response.error);
+            this.handleSupabaseError("Failed to load studio template", response.error);
         }
 
         if (!response.data) {
-            throw new Error("Studio not found");
+            throw new Error("Studio template not found");
         }
 
-        return mapStudioRow(response.data);
+        return response.data;
     }
     private async fetchAgentById(agentId: string): Promise<IAgent> {
         const supabase = this.ensureSupabase();

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import type { PostgrestResponse, PostgrestSingleResponse } from "@supabase/supabase-js";
+import type { PostgrestSingleResponse } from "@supabase/supabase-js";
 import { ChatKit } from "../dist/index.cjs";
 import { getConfig } from "../dist/env.cjs";
 
@@ -13,10 +13,8 @@ import type {
     MemberInsert,
     MemberRow,
     StudioAgentInsert,
-    StudioMemberInsert,
     StudioInsert,
     StudioRow,
-    StudioMemberRow,
     StudioAgentRow,
 } from "../src/supabase/types";
 
@@ -66,9 +64,9 @@ export async function createConversations() {
         throw new Error(studioPresetMessagesResponse.error?.message ?? "Failed to delete test studio preset messages");
     }
 
-    const studioMembersCleanupResponse = await supabase.from("studio_members").delete().eq("test", true);
-    if (studioMembersCleanupResponse.error) {
-        throw new Error(studioMembersCleanupResponse.error?.message ?? "Failed to delete test studio members");
+    const memberStudiosCleanupResponse = await supabase.from("member_studios").delete().eq("test", true);
+    if (memberStudiosCleanupResponse.error) {
+        throw new Error(memberStudiosCleanupResponse.error?.message ?? "Failed to delete test member studios");
     }
 
 
@@ -173,20 +171,26 @@ export async function createConversations() {
     const memberId = memberResponse.data.id as string;
 
     await chatKit.initializeMember(memberId);
-    const testConversation1 = await chatKit.createConversationWithMessage(studioId, memberId, {
+    const memberStudios = await chatKit.getMemberStudios(memberId);
+    if (memberStudios.length === 0) {
+        throw new Error("Member studio was not created");
+    }
+    const memberStudioId = memberStudios[0].id as string;
+
+    const testConversation1 = await chatKit.createConversationWithMessage(memberStudioId, memberId, {
         message: testConversation1Data.message,
     });
     const conversationDetails = await chatKit.getConversationMessages(testConversation1.id);
 
     assert.equal(conversationDetails.id, testConversation1.id, "Conversation id mismatch");
-    assert.equal(conversationDetails.studio.id, studioId, "Studio id mismatch");
+    assert.equal(conversationDetails.studio.id, memberStudioId, "Member studio id mismatch");
+    assert.equal(conversationDetails.studio.studio_id, studioId, "Studio template id mismatch");
     assert.ok(conversationDetails.studio.agents.length > 0, "Studio agents not loaded");
     assert.ok(conversationDetails.studio.members.length > 0, "Studio members not loaded");
     assert.ok(conversationDetails.messages.length > 0, "Conversation messages not loaded");
 
     console.log("Conversation created", JSON.stringify(conversationDetails, null, 2));
 
-    const memberStudios = await chatKit.getMemberStudios(memberId);
     console.log("Member studios", JSON.stringify(memberStudios, null, 2));
 }
 

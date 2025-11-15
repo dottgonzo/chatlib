@@ -1,19 +1,12 @@
-import type {
-    IAgent,
-    IConversation,
-    IConversationMessagePreset,
-    IMember,
-    IMessage,
-    IStudio,
-} from "../interfaces.cjs";
+import type { IAgent, IConversation, IConversationMessagePreset, IMember, IMessage, IStudio } from "../interfaces.cjs";
 import type {
     AgentRow,
     ConversationMemberRow,
     ConversationRow,
     MemberRow,
+    MemberStudioRow,
     MessageRow,
     StudioAgentRow,
-    StudioMemberRow,
     StudioPresetMessageRow,
     StudioRow,
 } from "./types";
@@ -26,14 +19,14 @@ type StudioAgentRelation = StudioAgentRow & {
     agent?: AgentRow | null;
 };
 
-type StudioMemberRelation = StudioMemberRow & {
-    member?: MemberRow | null;
-};
-
 export type StudioRowWithRelations = StudioRow & {
     studio_agents?: StudioAgentRelation[] | null;
-    studio_members?: StudioMemberRelation[] | null;
     studio_preset_messages?: StudioPresetMessageRow[] | null;
+};
+
+export type MemberStudioRowWithRelations = MemberStudioRow & {
+    template?: StudioRowWithRelations | null;
+    member?: MemberRow | null;
 };
 
 function mapPresetMessages(rows: StudioPresetMessageRow[] | null | undefined): IConversationMessagePreset[] {
@@ -70,20 +63,25 @@ export function mapMessageRow(row: MessageRow): IMessage {
     return row;
 }
 
-export function mapStudioRow(row: StudioRowWithRelations): IStudio {
-    const agents: IAgent[] = (row.studio_agents ?? [])
+export function mapStudioRow(row: MemberStudioRowWithRelations): IStudio {
+    if (!row.template) {
+        throw new Error("Member studio is missing template information");
+    }
+    const template = row.template;
+    const agents: IAgent[] = (template.studio_agents ?? [])
         .map(relation => relation.agent)
         .filter((agent): agent is AgentRow => Boolean(agent))
         .map(agent => mapAgentRow(agent));
-    const members: IMember[] = (row.studio_members ?? [])
-        .map(relation => relation.member)
-        .filter((member): member is MemberRow => Boolean(member))
-        .map(member => mapMemberRow(member));
+    const members: IMember[] = row.member ? [mapMemberRow(row.member)] : [];
 
     return {
         ...row,
+        template,
+        languages: template.languages,
+        language: template.language,
+        version: template.version,
         agents,
-        presetMessages: mapPresetMessages(row.studio_preset_messages),
+        presetMessages: mapPresetMessages(template.studio_preset_messages),
         members,
     };
 }

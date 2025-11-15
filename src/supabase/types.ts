@@ -83,7 +83,6 @@ export interface Database {
                     name: string;
                     languages: string[];
                     language: string;
-                    master_studio_id: string | null;
                     version: number;
                     test: boolean | null;
                 };
@@ -94,7 +93,6 @@ export interface Database {
                     name: string;
                     languages: string[];
                     language?: string;
-                    master_studio_id?: string | null;
                     version?: number;
                     test?: boolean | null;
                 };
@@ -105,8 +103,37 @@ export interface Database {
                     name?: string;
                     languages?: string[];
                     language?: string;
-                    master_studio_id?: string | null;
                     version?: number;
+                    test?: boolean | null;
+                };
+                Relationships: [];
+            };
+            member_studios: {
+                Row: {
+                    id: string;
+                    created_at: Date;
+                    updated_at: Date;
+                    name: string;
+                    studio_id: string;
+                    member_id: string;
+                    test: boolean | null;
+                };
+                Insert: {
+                    id?: string;
+                    created_at?: string;
+                    updated_at?: string;
+                    name: string;
+                    studio_id: string;
+                    member_id: string;
+                    test?: boolean | null;
+                };
+                Update: {
+                    id?: string;
+                    created_at?: string;
+                    updated_at?: string;
+                    name?: string;
+                    studio_id?: string;
+                    member_id?: string;
                     test?: boolean | null;
                 };
                 Relationships: [];
@@ -149,7 +176,7 @@ export interface Database {
                     id: string;
                     created_at: string;
                     updated_at: string;
-                    studio_id: string;
+                    member_studio_id: string;
                     studio_version: number;
                     title: string;
                     test: boolean | null;
@@ -158,7 +185,7 @@ export interface Database {
                     id?: string;
                     created_at?: string;
                     updated_at?: string;
-                    studio_id: string;
+                    member_studio_id: string;
                     studio_version: number;
                     title: string;
                     test?: boolean | null;
@@ -167,7 +194,7 @@ export interface Database {
                     id?: string;
                     created_at?: string;
                     updated_at?: string;
-                    studio_id?: string;
+                    member_studio_id?: string;
                     studio_version?: number;
                     title?: string;
                     test?: boolean | null;
@@ -231,36 +258,21 @@ export interface Database {
                 };
                 Relationships: [];
             };
-            studio_members: {
-                Row: {
-                    studio_id: string;
-                    member_id: string;
-                    test: boolean | null | undefined;
-                };
-                Insert: {
-                    studio_id: string;
-                    member_id: string;
-                    test?: boolean | null | undefined;
-                };
-                Update: {
-                    studio_id?: string;
-                    member_id?: string;
-                    test?: boolean | null | undefined;
-                };
-                Relationships: [];
-            };
             conversation_members: {
                 Row: {
                     conversation_id: string;
                     member_id: string;
+                    test: boolean | null;
                 };
                 Insert: {
                     conversation_id: string;
                     member_id: string;
+                    test?: boolean | null;
                 };
                 Update: {
                     conversation_id?: string;
                     member_id?: string;
+                    test?: boolean | null;
                 };
                 Relationships: [];
             };
@@ -302,8 +314,8 @@ export type MessageInsert = TableInsert<"messages">;
 export type StudioAgentRow = TableRow<"studio_agents">;
 export type StudioAgentInsert = TableInsert<"studio_agents">;
 
-export type StudioMemberRow = TableRow<"studio_members">;
-export type StudioMemberInsert = TableInsert<"studio_members">;
+export type MemberStudioRow = TableRow<"member_studios">;
+export type MemberStudioInsert = TableInsert<"member_studios">;
 
 export type ConversationMemberRow = TableRow<"conversation_members">;
 export type ConversationMemberInsert = TableInsert<"conversation_members">;
@@ -323,7 +335,11 @@ export type IConversation = ConversationRow & {
 
 export type IMessage = MessageRow;
 
-export type IStudio = StudioRow & {
+export type IStudio = MemberStudioRow & {
+    template: StudioRow;
+    languages: string[];
+    language: string;
+    version: number;
     agents: IAgent[];
     presetMessages: IConversationMessagePreset[];
     members: IMember[];

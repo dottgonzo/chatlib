@@ -28,15 +28,23 @@ create table if not exists public.studios (
   name text not null,
   languages text[] not null default array['en']::text[],
   language text not null default 'en',
-  master_studio_id uuid references public.studios(id) on delete set null,
   version integer not null default 1,
+  test boolean not null default false
+);
+create table if not exists public.member_studios (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  name text not null,
+  studio_id uuid not null references public.studios(id) on delete cascade,
+  member_id uuid not null references public.members(id) on delete cascade,
   test boolean not null default false
 );
 create table if not exists public.conversations (
   id uuid primary key default gen_random_uuid(),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  studio_id uuid not null references public.studios(id) on delete cascade,
+  member_studio_id uuid not null references public.member_studios(id) on delete cascade,
   studio_version integer not null,
   title text not null,
   test boolean not null default false
@@ -60,8 +68,8 @@ create index if not exists messages_conversation_member_idx
 create index if not exists messages_conversation_agent_idx
   on public.messages (conversation_id, agent_id);
 
-create index if not exists conversations_studio_title_idx
-  on public.conversations (studio_id, title);
+create index if not exists conversations_member_studio_title_idx
+  on public.conversations (member_studio_id, title);
 
 create table if not exists public.studio_agents (
   studio_id uuid not null references public.studios(id) on delete cascade,
@@ -73,16 +81,6 @@ create table if not exists public.studio_agents (
 create index if not exists studio_agents_agent_idx
   on public.studio_agents (agent_id);
 
-create table if not exists public.studio_members (
-  studio_id uuid not null references public.studios(id) on delete cascade,
-  member_id uuid not null references public.members(id) on delete cascade,
-  test boolean not null default false,
-  primary key (studio_id, member_id)
-);
-
-create index if not exists studio_members_member_idx
-  on public.studio_members (member_id);
-
 create table if not exists public.conversation_members (
   conversation_id uuid not null references public.conversations(id) on delete cascade,
   member_id uuid not null references public.members(id) on delete cascade,
@@ -92,6 +90,12 @@ create table if not exists public.conversation_members (
 
 create index if not exists conversation_members_member_idx
   on public.conversation_members (member_id);
+
+create index if not exists member_studios_member_idx
+  on public.member_studios (member_id);
+
+create index if not exists member_studios_studio_idx
+  on public.member_studios (studio_id);
 
 create table if not exists public.studio_preset_messages (
   id uuid primary key default gen_random_uuid(),
